@@ -1,48 +1,49 @@
-/* Quiz Coin PWA — Service Worker (cache offline) */
-const CACHE_NAME = "quizcoin-pwa-v1";
-const APP_SHELL = [
+/* Service Worker simples e estável (GitHub Pages) */
+const CACHE_NAME = "quizcoin-cache-v3";
+const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./service-worker.js",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/maskable-192.png",
-  "./icons/maskable-512.png",
-  "./README.txt"
+  "./README.txt",
+  "./icones/icon-192.png",
+  "./icones/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))))
-    )
+      Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
-  const url = new URL(req.url);
 
-  if (url.origin !== self.location.origin) return;
+  // Só trata GET
+  if (req.method !== "GET") return;
 
-  if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req)
-        .then((resp) => {
-          caches.open(CACHE_NAME).then((c) => c.put("./index.html", resp.clone()));
-          return resp;
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      if (cached) return cached;
+      return fetch(req)
+        .then((res) => {
+          // Se não for uma resposta OK, só retorna
+          if (!res || res.status !== 200 || res.type === "opaque") return res;
+
+          // Clona antes de salvar no cache
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+          return res;
         })
-        .catch(() => caches.match("./index.html"))
-    );
-    return;
-  }
-
-  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+        .catch(() => caches.match("./index.html"));
+    })
+  );
 });
+
